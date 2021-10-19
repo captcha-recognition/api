@@ -41,7 +41,9 @@ class CaptchaSolver(object):
         return img_transforms(image).unsqueeze(0)
 
     def _load_model(self, checkpoint):
+        print('start load model')
         self.model.load_state_dict(torch.load(checkpoint, map_location=self.device))
+        print('load model finish')
 
     def predict(self, img_bytes):
         imgs = self._transform_image(img_bytes)
