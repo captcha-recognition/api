@@ -1,4 +1,4 @@
-checkpoints
+checkpoints/*pt
 .DS_store
 .idea
 __pycache__
