@@ -23,7 +23,20 @@ class CaptchaSolver(object):
         self.model = ResNetRNN(self.input_shape,len(self.characters),config['map_to_seq_hidden'],
                                                                                 config['rnn_hidden'])
         self._load_model(self.checkpoint)
-
+    
+    def img2gray(self,img):
+         if img.mode == 'RGBA':
+             r,g,b,a = img.split()
+             img.load() # required for png.split()
+             background = Image.new("RGB", img.size, (255, 255, 255))
+             background.paste(img, mask=a) # 3 is the alpha channel
+             lim  =  background.convert("L")
+         elif img.mode == 'RGB':
+             lim = img.convert('L')
+         else:
+             lim = img
+         return lim
+   
 
     def _transform_image(self,image_bytes):
         """
@@ -34,10 +47,10 @@ class CaptchaSolver(object):
         mean = (0.485, 0.456, 0.406)
         std = (0.229, 0.224, 0.225)
         img_transforms = transforms.Compose([transforms.Resize((self.input_shape[1],self.input_shape[2])),
-                                        transforms.ToTensor(),
-                                        transforms.Normalize(mean = mean,std = std)
+                                        transforms.ToTensor()
                                              ])
-        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        image = Image.open(io.BytesIO(image_bytes))
+        image = self.img2gray(image)
         return img_transforms(image).unsqueeze(0)
 
     def _load_model(self, checkpoint):

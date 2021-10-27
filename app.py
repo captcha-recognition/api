@@ -7,7 +7,7 @@ from captcha_solver import  CaptchaSolver
 app = Flask(__name__)
 
 config = {
-    'input_shape': (3,32,100),
+    'input_shape': (1,32,100),
     "map_to_seq_hidden": 1024,
     "rnn_hidden": 128,
     'checkpoint':'checkpoints/model.pt',
