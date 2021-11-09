@@ -42,7 +42,7 @@ class CaptchaSolver(object):
             background.paste(image, mask=a) # 3 is the alpha channel
             image  =  background
         w, h = image.size
-        w = int(w*(self.input_shape[1]/h))
+        w = max(int(w*(self.input_shape[1]/h)),self.input_shape[2])
         img_transforms = transforms.Compose([transforms.Resize((self.input_shape[1],w)),
                                     transforms.ToTensor(),
                                     transforms.Normalize(mean = mean,std = std)
