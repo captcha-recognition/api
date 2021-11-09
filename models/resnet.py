@@ -1,70 +1,160 @@
+from torch import nn
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
-
-class ResidualBlock(nn.Module):
-
-    def __init__(self, in_channel, out_channel, stride=1):
+class ConvBNACT(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, groups=1, act=None):
         super().__init__()
-        self.left = nn.Sequential(
-            nn.Conv2d(in_channel, out_channel, kernel_size=3, stride=stride, padding=1, bias=False),
-            nn.BatchNorm2d(out_channel, track_running_stats=True),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_channel, out_channel, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(out_channel, track_running_stats=True)
-        )
-        self.shortcut = nn.Sequential()
-        if stride != 1 or in_channel != out_channel:
-            self.shortcut = nn.Sequential(
-                nn.Conv2d(in_channel, out_channel, kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(out_channel, track_running_stats=True)
-            )
+        self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size,
+                              stride=stride, padding=padding, groups=groups,
+                              bias=False)
+        self.bn = nn.BatchNorm2d(out_channels)
+        if act == 'relu':
+            self.act = nn.ReLU()
+        elif act is None:
+            self.act = None
+
+  
 
     def forward(self, x):
-        out = self.left(x)
-        out += self.shortcut(x)
-        out = F.relu(out)
-        return out
-
-
-class ResNet(nn.Module):
-    def __init__(self, input_shape):
-        super().__init__()
-        self.in_channel = 64
-        channels = [64,128,256,512]
-        strides = [1,2,2,2]
-        num_blocks = [3,4,6,3]
-        self.input_shape = input_shape
-        channel, height, width = input_shape
-        self.conv1 = nn.Sequential(
-            nn.Conv2d(channel, self.in_channel, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(self.in_channel, track_running_stats=True),
-            nn.ReLU(),
-        )
-        layers = [self.make_layer(ResidualBlock,channel,num_block,stride) for channel,stride,num_block in zip(channels,strides,num_blocks)]
-        self.layers = nn.Sequential(*layers)
-        self.out_pool = nn.MaxPool2d(kernel_size=(2,2), stride=(2,1), padding=0)
-
-    def make_layer(self, block, channels, num_blocks, stride):
-        strides = [stride] + [1] * (num_blocks - 1)
-        layers = []
-        for stride in strides:
-            layers.append(block(self.in_channel, channels, stride))
-            self.in_channel = channels
-        return nn.Sequential(*layers)
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.layers(x)
-        x = self.out_pool(x)
+        x = self.conv(x)
+        x = self.bn(x)
+        if self.act is not None:
+            x = self.act(x)
         return x
 
 
+class ConvBNACTWithPool(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, groups=1, act=None):
+        super().__init__()
+        self.pool = nn.AvgPool2d(kernel_size=stride, stride=stride, padding=0, ceil_mode=True)
+
+        self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=1,
+                              padding=(kernel_size - 1) // 2,
+                              groups=groups,
+                              bias=False)
+        self.bn = nn.BatchNorm2d(out_channels)
+        if act is None:
+            self.act = None
+        else:
+            self.act = nn.ReLU()
+
+   
+    def forward(self, x):
+        x = self.pool(x)
+        x = self.conv(x)
+        x = self.bn(x)
+        if self.act is not None:
+            x = self.act(x)
+        return x
+
+
+class ShortCut(nn.Module):
+    def __init__(self, in_channels, out_channels, stride, name, if_first=False):
+        super().__init__()
+        assert name is not None, 'shortcut must have name'
+
+        self.name = name
+        if in_channels != out_channels or stride[0] != 1:
+            if if_first:
+                self.conv = ConvBNACT(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=stride,
+                                      padding=0, groups=1, act=None)
+            else:
+                self.conv = ConvBNACTWithPool(in_channels=in_channels, out_channels=out_channels, kernel_size=1,
+                                              stride=stride, groups=1, act=None)
+        elif if_first:
+            self.conv = ConvBNACT(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=stride,
+                                  padding=0, groups=1, act=None)
+        else:
+            self.conv = None
+
+   
+
+    def forward(self, x):
+        if self.conv is not None:
+            x = self.conv(x)
+        return x
+
+
+class BasicBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, stride, if_first, name):
+        super().__init__()
+        assert name is not None, 'block must have name'
+        self.name = name
+
+        self.conv0 = ConvBNACT(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride,
+                               padding=1, groups=1, act='relu')
+        self.conv1 = ConvBNACT(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=1, padding=1,
+                               groups=1, act=None)
+        self.shortcut = ShortCut(in_channels=in_channels, out_channels=out_channels, stride=stride,
+                                 name=f'{name}_branch1', if_first=if_first, )
+        self.relu = nn.ReLU()
+        self.output_channels = out_channels
+
+  
+
+    def forward(self, x):
+        y = self.conv0(x)
+        y = self.conv1(y)
+        y = y + self.shortcut(x)
+        return self.relu(y)
+
+
+
+
+class ResNet(nn.Module):
+    def __init__(self, in_channel, layers = 34):
+        super().__init__()
+        supported_layers = {
+            18: {'depth': [2, 2, 2, 2], 'block_class': BasicBlock},
+            34: {'depth': [3, 4, 6, 3], 'block_class': BasicBlock},
+        }
+        assert layers in supported_layers, "supported layers are {} but input layer is {}".format(supported_layers,
+                                                                                                  layers)
+
+        depth = supported_layers[layers]['depth']
+        block_class = supported_layers[layers]['block_class']
+        self.in_channel = in_channel
+        num_filters = [64, 128, 256, 512]
+        self.conv1 = nn.Sequential(
+            ConvBNACT(in_channels=in_channel, out_channels=32, kernel_size=3, stride=1, padding=1, act='relu'),
+            ConvBNACT(in_channels=32, out_channels=32, kernel_size=3, stride=1, act='relu', padding=1),
+            ConvBNACT(in_channels=32, out_channels=64, kernel_size=3, stride=1, act='relu', padding=1)
+        )
+
+        self.pool1 = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+
+        self.stages = nn.ModuleList()
+        in_ch = 64
+        for block_index in range(len(depth)):
+            block_list = []
+            for i in range(depth[block_index]):
+                conv_name = f'res{str(block_index + 2)}{chr(97 + i)}'
+                if i == 0 and block_index != 0:
+                    stride = (2, 1)
+                else:
+                    stride = (1, 1)
+                block_list.append(block_class(in_channels=in_ch, out_channels=num_filters[block_index],
+                                              stride=stride,
+                                              if_first=block_index == i == 0, name=conv_name))
+                in_ch = block_list[-1].output_channels
+            self.stages.append(nn.Sequential(*block_list))
+        self.out_channels = in_ch
+        self.out = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
+
+
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.pool1(x)
+        for stage in self.stages:
+            x = stage(x)
+        x = self.out(x)
+        # [b,c,h,w]
+        return x
+
 if __name__ == '__main__':
-    resnet = ResNet((3,32,100))
-    #(batch, channel, height, width)
-    print(resnet)
     x = torch.rand((16,3,32,100))
-    out = resnet(x)
-    print(out.shape)
+    net = ResNetV2(in_channel=3)
+    out = net(x)
+    #[16, 512, 1, 25]
+    print(out.shape,x.shape)

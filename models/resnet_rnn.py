@@ -7,7 +7,7 @@ class ResNetRNN(nn.Module):
 
     def __init__(self,input_shape,num_class,map_to_seq_hidden= 1024, rnn_hidden=128, leaky_relu=False):
         super(ResNetRNN, self).__init__()
-        self.cnn = ResNet(input_shape)
+        self.cnn = ResNet(input_shape[0])
         self.rnn = nn.LSTM(map_to_seq_hidden, rnn_hidden, num_layers=2, bidirectional=True)
         self.dense = nn.Linear(rnn_hidden*2,num_class)
 

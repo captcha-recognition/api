@@ -8,9 +8,9 @@ app = Flask(__name__)
 
 config = {
     'input_shape': (3,32,100),
-    "map_to_seq_hidden": 1024,
+    "map_to_seq_hidden": 512,
     "rnn_hidden": 128,
-    'checkpoint':'checkpoints/model.pt',
+    'checkpoint':'checkpoints/20211109_5879_resnet_v2_rnn_ctc.pt',
     'characters': "-"+ string.digits + string.ascii_lowercase,
     'decode_method':'beam_search',
     'beam_size':10,
